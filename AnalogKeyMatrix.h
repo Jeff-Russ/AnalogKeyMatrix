@@ -75,17 +75,32 @@ struct AKM_State {
  * being pressed and, when FIRST returning to an OFF state (AKM_PRESS goes
  * to AKM_RELEASE) and when AKM_RELEASE goes to AKM_IDLE.
  */
+ 
+typedef struct AKM_HeldKeys AKM_HeldKeys;
+struct AKM_HeldKeys {
+	int8_t numOfKeys;       // size of keys array field below
+	short keys[AKM_LogSize];// array of key numbers currently held or just released
+	bool released;          // true if released, false if held
+	unsigned long duration; // duration in ms since first key (keys[0]) pressed 
+};
+
+typedef struct AKM_RepeatKeys AKM_RepeatKeys;
+struct AKM_RepeatKeys {
+	int8_t numOfRepeats; // size of keys array field below
+	short key;           // number of key involed or -1
+	bool released;       // true if last press released, false if not
+	short modifiers[2];  // -1 for all if no modifiers, just [1] for one
+	unsigned long duration; // duration in ms since first key (keys[0]) pressed
+};
 
 /*
 	*****************************************************************************
 	TODO:
-	1.
-	Make an option to log duplicate ON states with slightly different values 
-	(helpful if a pot is involved). This, of course, requires much more than 6 
-	(the default set by #define AKM_LogSize) slots, maybe a 3 dim array.
-
-	2. Make methods for isLongHold, isDoublePress and getModifiers which analyzes 
-	current and previous state(s),
+	1. isDoublePress and isTriplePress which analyzes current and previous states.
+	2. for AKM_HeldKeys and the above it might be more performant to let the caller
+	   filter which key(s) they are concerned with.
+	3. Maybe have a mega struct that contains all struct for a method that returns
+	   everything at once?
 	*****************************************************************************
 */
 
@@ -107,6 +122,10 @@ class AnalogKeyMatrix
 	AKM_State _log[AKM_LogSize];    // array current + 1 or more previous states
 	uint8_t now_i; // position of current state in _log[]
 	uint8_t prev_i; // position of previous state in _log[]
+	
+	// We'll use pointer to these to have uniform interace. matching .log/._log
+	AKM_HeldKeys   _heldKeys;   // see AKM_HeldKeys declaration
+	AKM_RepeatKeys _repeatKeys; // see AKM_RepeatKeys declaration
 		
   public:
 	
@@ -114,6 +133,10 @@ class AnalogKeyMatrix
 	AKM_State * log[AKM_LogSize]; // pointers to this->_log, always in order
 	AKM_State * now;    // = &this->_log[ this->now_i ]
 	AKM_State * prev;   // = &this->_log[ this->prev_i]
+	
+	// These are initialized in resetStates() such as via constructor:
+	AKM_HeldKeys   * heldKeys;   // points to _heldKeys
+	AKM_RepeatKeys * repeatKeys; // points to _heldKeys
 
 	AnalogKeyMatrix (
 		uint8_t pin,
@@ -215,11 +238,13 @@ class AnalogKeyMatrix
 		this->resetStates();
 	}
 	
+	
 	AKM_State * resetStates ()
 	{
 		IF_VERBOSE( Serial.println("\n====resetting states"); );
 		int val = analogRead(this->pin);
 		unsigned long ms = millis();
+		uint8_t i; // iterator
 
 		for (uint8_t i = 0; i < AKM_LogSize; i++) // this->numOfKeys? no. AKM_LogSize
 		{
@@ -236,13 +261,36 @@ class AnalogKeyMatrix
 		this->prev_i = AKM_LogSize - 1;
 		this->prev =& this->_log[this->prev_i];
 		
+		AKM_State * ret;
+
 		if (val >= this->keys[0][kmin] 
 		 && val <= this->keys[this->nthKey][kmax] ) {
 			IF_VERBOSE( Serial.println("\n====resetStates() calling read()..."); );
-			return this->read();
+			ret = this->read();
+
 		} else {
-			return this->now;
+			ret = this->now;
 		}
+
+		// we may want to not totaly reset the following struct if we called .read()
+
+		// Reset AKM_HeldKeys struct
+		this->_heldKeys.numOfKeys = 0;
+		for (i = 0; i < AKM_LogSize; i++) this->_heldKeys.keys[i] = -1;
+		this->_heldKeys.released;
+		this->_heldKeys.duration = 0;
+		this->heldKeys =& this->_heldKeys; // set pointer
+
+		// reset AKM_RepeatKeys struct:
+		this->_repeatKeys.numOfRepeats = 0;
+		this->_repeatKeys.key = -1;
+		this->_repeatKeys.released = true;
+		this->_repeatKeys.modifiers[0] = -1;
+		this->_repeatKeys.modifiers[1] = -1;
+		this->_repeatKeys.duration = 0;
+		this->repeatKeys =& this->_repeatKeys; // set pointer
+
+		return ret;
 	}
 		
 	////////////////////////////////////////////////////////////////////////////
@@ -362,8 +410,10 @@ class AnalogKeyMatrix
 		return this->now;
 	}
 
+
 IF_DEBUG(
-	void debugKeys() {
+	void debugKeys()
+	{
 		for (uint8_t i = 0; i < this->numOfKeys; i++) {
 			Serial.print("knum: " + String(this->keys[i][knum]) );
 			Serial.print(" kval: " + String(this->keys[i][kval]) );
@@ -371,7 +421,8 @@ IF_DEBUG(
 			Serial.println(" kmax: " + String(this->keys[i][kmax]) );
 		}
 	}
-	void debugNow() {
+	void debugNow()
+	{
 		// val event key ms
 		Serial.print("prev_i " + String(this->prev_i) );
 		Serial.print(", now_i " + String(this->now_i) );
@@ -389,7 +440,8 @@ IF_DEBUG(
 		Serial.print(", key " + String(this->now->key) );
 		Serial.println(", " + String(this->now->ms) + "ms");
 	}
-	void debugStates() {
+	void debugStates()
+	{
 		// val event key ms
 		Serial.println("\n====debugStates()");
 		Serial.print("current state " + String(this->now_i) );
@@ -412,6 +464,34 @@ IF_DEBUG(
 			Serial.println(", " + String(s->ms) + "ms");
 		}
 	}
+
+	void debugHeldKeys()
+	{
+		uint8_t i; // iterator
+		Serial.println("\n====debugHeldKeys()");
+		Serial.print(String(this->heldKeys->numOfKeys) + " keys held: { ");
+		for (i = 0; i < AKM_LogSize; i++) {
+			Serial.print(String(this->heldKeys->keys[i]));
+			if (i < (AKM_LogSize-1)) Serial.print(", ");
+		}
+		Serial.print(" }");
+		if (this->heldKeys->released) Serial.print(", released, Duration: ");
+		else Serial.print(", not released, Duration: ");
+		Serial.println(String(this->heldKeys->duration)); 
+	}
+
+	void debugRepeatKeys()
+	{
+		Serial.println("\n====debugRepeatKeys()");
+		Serial.print(String(this->repeatKeys->numOfRepeats) + " repeats of key ");
+		Serial.print(String(this->repeatKeys->key));
+		if (this->repeatKeys->released) Serial.print(", released, modifiers: {");
+		else Serial.print(", not released, modifiers: {");
+		Serial.print(String(this->repeatKeys->modifiers[0]) + ", ");
+		Serial.print(String(this->repeatKeys->modifiers[1]) + "}, Duration: ");
+		Serial.println(String(this->repeatKeys->duration));
+	}
 );
+
 };
 
