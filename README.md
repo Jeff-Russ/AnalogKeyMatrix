@@ -141,9 +141,9 @@ found.
 __ AKM\_PRESS status__  
 
 	my_keymatrix.now->val;    // => int from analogRead() IN range for ->key
-	my_keymatrix.now->event;  // => AKM_PRESS
-	my_keymatrix.now->key;    // int key number (never -1)
-	my_keymatrix.now->ms;     // millis() at FIRST in series of AKM_PRESS
+	my_keymatrix.now->event;  // => AKM_PRESS (int8_t)
+	my_keymatrix.now->key;    // => short int key number (never -1)
+	my_keymatrix.now->ms;     // => millis() at FIRST in series of AKM_PRESS
 
 When the object first finds any key is pressed, a new event slot in `.log[]` 
 is written to as seen above with ->now pointing to it. `->ms` is updated 
@@ -156,9 +156,9 @@ your own call to `.millis()`.
 __ AKM\_RELEASE status__ 
 
 	my_keymatrix.now->val;    // => analogRead() int OUT of range of any key
-	my_keymatrix.now->event;  // => AKM_RELEASE
-	my_keymatrix.now->key;    // int key number of previous event (.prev->key)
-	my_keymatrix.now->ms;     // millis() at FIRST in series of AKM_RELEASE
+	my_keymatrix.now->event;  // => AKM_RELEASE (int8_t)
+	my_keymatrix.now->key;    // => short int key number of previous event (.prev->key)
+	my_keymatrix.now->ms;     // => millis() at FIRST in series of AKM_RELEASE
 
 When the key is finally released, the log advances to a new AKM_State slot 
 position and makes the event `AKM_RELEASE`. A new timestamp and a new value are 

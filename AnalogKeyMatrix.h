@@ -1,3 +1,4 @@
+
 // AnalogKeyMatrix.h
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,9 +66,9 @@ uint8_t AKM_defaultNumOfKeys = 12;
 
 typedef struct AKM_State AKM_State;
 struct AKM_State {
-	int val;    // integer return from analogRead() stored for posterity
-	int event;  // see #define AKM_* macros 
-	int key; // key number or -1 if idle
+	int val;      // integer return from analogRead() stored for posterity
+	int8_t event; // see #define AKM_* macros 
+	short key;    // key number or -1 if idle
 	unsigned long ms; // see below
 };
 /* millis() is only logged when key matrix FIRST goes from OFF to a key 
